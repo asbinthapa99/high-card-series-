@@ -1,0 +1,975 @@
+============================================================
+src/Card.java
+============================================================
+
+import java.util.Objects;
+
+public class Card {
+    // Suits used in a standard deck.
+    public enum Suit {
+        CLUBS("Clubs"), DIAMONDS("Diamonds"), HEARTS("Hearts"), SPADES("Spades");
+
+        private final String displayName;
+
+        Suit(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+    }
+
+    // Ranks with both value (for comparison) and display text.
+    public enum Rank {
+        TWO(2, "2"), THREE(3, "3"), FOUR(4, "4"), FIVE(5, "5"), SIX(6, "6"),
+        SEVEN(7, "7"), EIGHT(8, "8"), NINE(9, "9"), TEN(10, "10"),
+        JACK(11, "Jack"), QUEEN(12, "Queen"), KING(13, "King"), ACE(14, "Ace");
+
+        private final int value;
+        private final String displayName;
+
+        Rank(int value, String displayName) {
+            this.value = value;
+            this.displayName = displayName;
+        }
+
+        public int getValue() {
+            return value;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+    }
+
+    private final Suit suit;
+    private final Rank rank;
+
+    // Create one card with suit + rank.
+    public Card(Suit suit, Rank rank) {
+        this.suit = suit;
+        this.rank = rank;
+    }
+
+    public Suit getSuit() {
+        return suit;
+    }
+
+    public Rank getRank() {
+        return rank;
+    }
+
+    public String toDisplayString() {
+        // Example: "Queen of Hearts"
+        return rank.getDisplayName() + " of " + suit.getDisplayName();
+    }
+
+    @Override
+    public String toString() {
+        return toDisplayString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Card card)) return false;
+        return suit == card.suit && rank == card.rank;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(suit, rank);
+    }
+}
+
+
+============================================================
+src/Deck.java
+============================================================
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
+
+public class Deck {
+    private final Deque<Card> cards = new ArrayDeque<>();
+
+    // Build a full 52-card deck and shuffle it.
+    public Deck() {
+        List<Card> freshDeck = new ArrayList<>();
+        for (Card.Suit suit : Card.Suit.values()) {
+            for (Card.Rank rank : Card.Rank.values()) {
+                freshDeck.add(new Card(suit, rank));
+            }
+        }
+        Collections.shuffle(freshDeck);
+        cards.addAll(freshDeck);
+    }
+
+    // Draw card from the top, or null if empty.
+    public Card drawTopCard() {
+        return cards.pollFirst();
+    }
+
+    // Put a card at the bottom of the deck.
+    public void returnToBottom(Card card) {
+        cards.offerLast(card);
+    }
+
+    // Number of cards currently left in deck.
+    public int remainingCards() {
+        return cards.size();
+    }
+}
+
+
+============================================================
+src/Game.java
+============================================================
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+
+public class Game {
+    private final Scanner scanner;
+    private final List<Player> players = new ArrayList<>();
+    private Deck deck;
+
+    public Game(Scanner scanner) {
+        this.scanner = scanner;
+    }
+
+    public void start() {
+        // Main game flow.
+        System.out.println("=== High Card Series ===");
+        setupPlayers();
+        int rounds = readIntInRange("Enter number of rounds (5-10): ", 5, 10);
+
+        deck = new Deck();
+        playRounds(rounds);
+
+        System.out.println();
+        showRoundSummary();
+        runAdjustmentStage();
+
+        System.out.println();
+        applyLongestConsecutiveSequenceBonus();
+        applyHighestSuitCountBonus();
+
+        System.out.println();
+        showFinalResults();
+    }
+
+    private void setupPlayers() {
+        // Read player count and player names.
+        int playerCount = readIntInRange("Enter number of players (2-5): ", 2, 5);
+
+        for (int i = 1; i <= playerCount; i++) {
+            String name;
+            do {
+                System.out.print("Enter name for player " + i + ": ");
+                name = scanner.nextLine().trim();
+                if (!isValidName(name)) {
+                    System.out.println("Invalid input.");
+                }
+            } while (!isValidName(name));
+
+            Player player = new Player(name);
+            players.add(player);
+            if (player.isComputerControlled()) {
+                System.out.println("Player " + i + " is computer-controlled.");
+            }
+        }
+    }
+
+    private void playRounds(int rounds) {
+        // Run each round: deal cards, resolve winner, show score.
+        for (int round = 1; round <= rounds; round++) {
+            printRoundHeader(round);
+
+            Map<Player, Card> roundCards = new HashMap<>();
+            for (Player player : players) {
+                Card drawnCard = deck.drawTopCard();
+                if (drawnCard == null) {
+                    System.out.println("Deck ran out of cards.");
+                    return;
+                }
+
+                roundCards.put(player, drawnCard);
+                System.out.println(player.getName() + " was dealt: " + drawnCard.toDisplayString());
+            }
+
+            resolveRound(roundCards);
+            System.out.println();
+            printScores();
+            System.out.println();
+            printRoundFooter(round, rounds);
+        }
+    }
+
+    private void printRoundHeader(int round) {
+        System.out.println();
+        System.out.println("==============================");
+        System.out.println("Round " + round);
+        System.out.println("==============================");
+    }
+
+    private void printRoundFooter(int round, int rounds) {
+        System.out.println("End of Round " + round + ".");
+        System.out.println();
+        if (round < rounds) {
+            System.out.print("Press Enter to continue to Round " + (round + 1) + "...");
+            scanner.nextLine();
+        }
+    }
+
+    private void resolveRound(Map<Player, Card> roundCards) {
+        // Highest rank wins this round.
+        int highestRank = roundCards.values()
+                .stream()
+                .mapToInt(card -> card.getRank().getValue())
+                .max()
+                .orElse(-1);
+
+        List<Player> winners = new ArrayList<>();
+        for (Player player : players) {
+            Card card = roundCards.get(player);
+            if (card != null && card.getRank().getValue() == highestRank) {
+                winners.add(player);
+            }
+        }
+
+        if (winners.size() == 1) {
+            Player winner = winners.get(0);
+            winner.addRoundPoints(3);
+            winner.recordRoundWin();
+            winner.collectCard(roundCards.get(winner));
+            System.out.println("Round winner: " + winner.getName() + " keeps "
+                    + roundCards.get(winner).toDisplayString() + " and gets 3 points.");
+        } else {
+            System.out.print("Round winners: ");
+            for (int i = 0; i < winners.size(); i++) {
+                Player winner = winners.get(i);
+                winner.addRoundPoints(1);
+                winner.recordRoundTie();
+                winner.collectCard(roundCards.get(winner));
+                System.out.print(winner.getName() + " keeps "
+                        + roundCards.get(winner).toDisplayString());
+                if (i < winners.size() - 1) {
+                    System.out.print(", ");
+                }
+            }
+            System.out.println(" and get 1 point each.");
+        }
+
+        Set<Player> winnerSet = new HashSet<>(winners);
+        // Non-winning cards go back to bottom of deck.
+        for (Player player : players) {
+            if (!winnerSet.contains(player)) {
+                deck.returnToBottom(roundCards.get(player));
+            }
+        }
+    }
+
+    private void printScores() {
+        System.out.println("Current scores:");
+        for (Player player : players) {
+            System.out.println(player.getName() + ": " + player.getScore());
+        }
+    }
+
+    private void showRoundSummary() {
+        System.out.println("=== End of Rounds Summary ===");
+        for (Player player : players) {
+            System.out.println(player.getName() + " round score: " + player.getRoundPoints());
+            System.out.println(player.getName() + "'s collected cards:");
+            if (player.getCollectedCards().isEmpty()) {
+                System.out.println("none");
+            } else {
+                for (int i = 0; i < player.getCollectedCards().size(); i++) {
+                    System.out.println((i + 1) + ". " + player.getCollectedCards().get(i).toDisplayString());
+                }
+            }
+            System.out.println();
+        }
+    }
+
+    private void runAdjustmentStage() {
+        // Optional step to replace up to 2 collected cards.
+        System.out.println("=== Optional Adjustment Stage ===");
+
+        for (int i = 0; i < players.size(); i++) {
+            Player player = players.get(i);
+            System.out.println();
+            System.out.println(player.getName() + "'s turn.");
+
+            if (player.getCollectedCards().isEmpty()) {
+                System.out.println(player.getName() + " has no collected cards and skips the adjustment stage.");
+                continue;
+            }
+
+            if (player.isComputerControlled()) {
+                printCollectedCards(player);
+                System.out.println(player.getName() + " skipped replacement.");
+                continue;
+            }
+
+            printCollectedCards(player);
+            if (!readYesNo("Do you want to replace cards? (yes/no): ")) {
+                System.out.println(player.getName() + " skipped replacement.");
+                continue;
+            }
+
+            int maxDiscard = Math.min(2, player.getCollectedCards().size());
+            int discardCount = readIntInRange("How many cards do you want to replace? (1-" + maxDiscard + "): ",
+                    1, maxDiscard);
+
+            for (int discardIndex = 0; discardIndex < discardCount; discardIndex++) {
+                printCollectedCards(player);
+                int cardIndex = readIntInRange("Choose card number to discard: ", 1, player.getCollectedCards().size());
+                List<Integer> indexes = new ArrayList<>();
+                indexes.add(cardIndex);
+                List<Card> discarded = player.discardByOneBasedIndexes(indexes);
+                Card replacement = deck.drawTopCard();
+                if (replacement != null) {
+                    player.collectCard(replacement);
+                    System.out.println("Replacement card drawn: " + replacement.toDisplayString());
+                } else {
+                    System.out.println("Replacement card drawn: no replacement available");
+                }
+
+                if (!discarded.isEmpty()) {
+                    deck.returnToBottom(discarded.get(0));
+                }
+            }
+
+            printCollectedCards(player);
+        }
+    }
+
+    private void printCollectedCards(Player player) {
+        System.out.println(player.getName() + "'s collected cards:");
+        if (player.getCollectedCards().isEmpty()) {
+            System.out.println("none");
+            return;
+        }
+        for (int i = 0; i < player.getCollectedCards().size(); i++) {
+            System.out.println((i + 1) + ". " + player.getCollectedCards().get(i).toDisplayString());
+        }
+    }
+
+    private void applyLongestConsecutiveSequenceBonus() {
+        // Bonus based on longest consecutive rank sequence.
+        System.out.println("=== Bonus 1: Longest Consecutive Rank Sequence ===");
+        Map<Player, Integer> sequenceLengths = new HashMap<>();
+        int bestLength = 0;
+
+        for (Player player : players) {
+            int longest = longestConsecutiveRankLength(player.getCollectedCards());
+            sequenceLengths.put(player, longest);
+            bestLength = Math.max(bestLength, longest);
+        }
+
+        List<Player> bestPlayers = new ArrayList<>();
+        for (Player player : players) {
+            if (sequenceLengths.get(player) == bestLength) {
+                bestPlayers.add(player);
+            }
+        }
+
+        Map<Player, Integer> bonuses = new HashMap<>();
+        for (Player player : players) {
+            bonuses.put(player, 0);
+        }
+        if (bestLength > 0) {
+            if (bestPlayers.size() == 1) {
+                Player winner = bestPlayers.get(0);
+                winner.addSequenceBonus(5);
+                bonuses.put(winner, 5);
+            } else {
+                for (Player player : bestPlayers) {
+                    player.addSequenceBonus(2);
+                    bonuses.put(player, 2);
+                }
+            }
+        }
+
+        for (Player player : players) {
+            System.out.println(player.getName() + " sequence length = " + sequenceLengths.get(player)
+                    + ", bonus = " + bonuses.get(player));
+        }
+        System.out.println();
+    }
+
+    private void applyHighestSuitCountBonus() {
+        // Bonus based on most cards of the same suit.
+        System.out.println("=== Bonus 2: Highest Suit Count ===");
+        Map<Player, Integer> playerHighestSuitCounts = new HashMap<>();
+        Map<Player, Map<Card.Suit, Integer>> allSuitCounts = new HashMap<>();
+        int bestSuitCount = 0;
+
+        for (Player player : players) {
+            Map<Card.Suit, Integer> suitCounts = new EnumMap<>(Card.Suit.class);
+            for (Card.Suit suit : Card.Suit.values()) {
+                suitCounts.put(suit, 0);
+            }
+            for (Card card : player.getCollectedCards()) {
+                suitCounts.put(card.getSuit(), suitCounts.get(card.getSuit()) + 1);
+            }
+
+            int highestForPlayer = suitCounts.values().stream().max(Integer::compareTo).orElse(0);
+            playerHighestSuitCounts.put(player, highestForPlayer);
+            allSuitCounts.put(player, suitCounts);
+            bestSuitCount = Math.max(bestSuitCount, highestForPlayer);
+        }
+
+        List<Player> bestPlayers = new ArrayList<>();
+        for (Player player : players) {
+            if (playerHighestSuitCounts.get(player) == bestSuitCount) {
+                bestPlayers.add(player);
+            }
+        }
+
+        Map<Player, Integer> bonuses = new HashMap<>();
+        for (Player player : players) {
+            bonuses.put(player, 0);
+        }
+        if (bestSuitCount > 0) {
+            if (bestPlayers.size() == 1) {
+                Player winner = bestPlayers.get(0);
+                winner.addSuitBonus(5);
+                bonuses.put(winner, 5);
+            } else {
+                for (Player player : bestPlayers) {
+                    player.addSuitBonus(2);
+                    bonuses.put(player, 2);
+                }
+            }
+        }
+
+        for (Player player : players) {
+            Map<Card.Suit, Integer> suitCounts = allSuitCounts.get(player);
+            System.out.println(player.getName() + " suit counts -> Clubs: " + suitCounts.get(Card.Suit.CLUBS)
+                    + ", Diamonds: " + suitCounts.get(Card.Suit.DIAMONDS)
+                    + ", Hearts: " + suitCounts.get(Card.Suit.HEARTS)
+                    + ", Spades: " + suitCounts.get(Card.Suit.SPADES));
+            System.out.println(player.getName() + " highest suit count = " + playerHighestSuitCounts.get(player)
+                    + ", bonus = " + bonuses.get(player));
+        }
+        System.out.println();
+    }
+
+    private void showFinalResults() {
+        // Sort by score and print winner/draw.
+        System.out.println("=== Final Results ===");
+        List<Player> sorted = new ArrayList<>(players);
+        sorted.sort(Comparator.comparingInt(Player::getScore).reversed());
+
+        for (int i = 0; i < sorted.size(); i++) {
+            Player player = sorted.get(i);
+            System.out.println((i + 1) + ". " + player.getName() + " - " + player.getScore() + " points");
+        }
+
+        int topScore = sorted.get(0).getScore();
+        List<Player> topPlayers = sorted.stream().filter(p -> p.getScore() == topScore).toList();
+
+        if (topPlayers.size() == 1) {
+            System.out.println("Winner: " + topPlayers.get(0).getName());
+        } else {
+            System.out.print("Draw: ");
+            for (int i = 0; i < topPlayers.size(); i++) {
+                System.out.print(topPlayers.get(i).getName());
+                if (i < topPlayers.size() - 1) {
+                    System.out.print(" ");
+                }
+            }
+            System.out.println(" with " + topScore + " points each.");
+        }
+    }
+
+    private int readIntInRange(String prompt, int min, int max) {
+        // Keep asking until user enters valid number in range.
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim();
+            try {
+                int value = Integer.parseInt(input);
+                if (value < min || value > max) {
+                    System.out.println("Invalid input.");
+                    continue;
+                }
+                return value;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input.");
+            }
+        }
+    }
+
+    private boolean readYesNo(String prompt) {
+        // Accept y/yes or n/no only.
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim().toLowerCase();
+
+            if ("y".equals(input) || "yes".equals(input)) {
+                return true;
+            }
+            if ("n".equals(input) || "no".equals(input)) {
+                return false;
+            }
+
+            System.out.println("Invalid input.");
+        }
+    }
+
+    private boolean isValidName(String name) {
+        // Name cannot be empty and cannot contain digits.
+        if (name.isEmpty()) {
+            return false;
+        }
+
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isDigit(name.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int longestConsecutiveRankLength(List<Card> cards) {
+        // Find longest consecutive run using unique rank values.
+        if (cards.isEmpty()) {
+            return 0;
+        }
+
+        Set<Integer> uniqueRanks = new HashSet<>();
+        for (Card card : cards) {
+            uniqueRanks.add(card.getRank().getValue());
+        }
+
+        int best = 0;
+        for (int rank : uniqueRanks) {
+            if (!uniqueRanks.contains(rank - 1)) {
+                int current = rank;
+                int length = 1;
+                while (uniqueRanks.contains(current + 1)) {
+                    current++;
+                    length++;
+                }
+                best = Math.max(best, length);
+            }
+        }
+        return best;
+    }
+
+}
+
+
+============================================================
+src/Main.java
+============================================================
+
+import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        try (Scanner scanner = new Scanner(System.in)) {
+            Game game = new Game(scanner);
+            game.start();
+        }
+    }
+}
+
+
+============================================================
+src/Player.java
+============================================================
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Player {
+    private final String name;
+    // Player named "Computer" is treated as computer-controlled.
+    private final boolean computerControlled;
+    private final List<Card> collectedCards = new ArrayList<>();
+    private int score;
+    private int roundPoints;
+    private int sequenceBonus;
+    private int suitBonus;
+    private int roundsWon;
+    private int roundsTied;
+    public Player(String name) {
+        this.name = name;
+        this.computerControlled = "Computer".equalsIgnoreCase(name);
+    }
+    public String getName() {
+        return name;
+    }
+    public boolean isComputerControlled() {
+        return computerControlled;
+    }
+    public int getScore() {
+        return score;
+    }
+    public int getRoundPoints() {
+        return roundPoints;
+    }
+    public int getSequenceBonus() {
+        return sequenceBonus;
+    }
+    public int getSuitBonus() {
+        return suitBonus;
+    }
+    public int getRoundsWon() {
+        return roundsWon;
+    }
+    public int getRoundsTied() {
+        return roundsTied;
+    }
+    public void addRoundPoints(int points) {
+        // Round points also contribute to total score.
+        roundPoints += points;
+        score += points;
+    }
+
+    public void recordRoundWin() {
+        roundsWon++;
+    }
+    public void recordRoundTie() {
+        roundsTied++;
+    }
+    public void addSequenceBonus(int points) {
+        // Bonus points also contribute to total score.
+        sequenceBonus += points;
+        score += points;
+    }
+    public void addSuitBonus(int points) {
+        suitBonus += points;
+        score += points;
+    }
+    public List<Card> getCollectedCards() {
+        return collectedCards;
+    }
+    public void collectCard(Card card) {
+        collectedCards.add(card);
+    }
+    public List<Card> discardByOneBasedIndexes(List<Integer> indexes) {
+        // Sort descending so removing one index does not shift later removals.
+        indexes.sort((a, b) -> Integer.compare(b, a));
+        List<Card> discarded = new ArrayList<>();
+
+        for (int oneBasedIndex : indexes) {
+            int zeroBased = oneBasedIndex - 1;
+            if (zeroBased >= 0 && zeroBased < collectedCards.size()) {
+                discarded.add(collectedCards.remove(zeroBased));
+            }
+        }
+        return discarded;
+    }
+}
+
+
+============================================================
+test/CardTest.java
+============================================================
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+
+class CardTest {
+
+    @Test
+    void checkCardDisplayText() {
+        // Arrange
+        Card card = new Card(Card.Suit.HEARTS, Card.Rank.QUEEN);
+
+        // Act + Assert
+        assertEquals("Queen of Hearts", card.toDisplayString());
+        assertEquals(card.toDisplayString(), card.toString());
+    }
+
+    @Test
+    void checkCardEqualsAndHashCode() {
+        // Arrange
+        Card card1 = new Card(Card.Suit.SPADES, Card.Rank.ACE);
+        Card card2 = new Card(Card.Suit.SPADES, Card.Rank.ACE);
+        Card card3 = new Card(Card.Suit.CLUBS, Card.Rank.ACE);
+
+        // Assert
+        assertEquals(card1, card2);
+        assertEquals(card1.hashCode(), card2.hashCode());
+        assertNotEquals(card1, card3);
+    }
+}
+
+
+============================================================
+test/DeckTest.java
+============================================================
+
+import org.junit.jupiter.api.Test;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class DeckTest {
+
+    @Test
+    void checkNewDeckHas52UniqueCards() {
+        // Arrange
+        Deck deck = new Deck();
+        Set<Card> seen = new HashSet<>();
+
+        // Act + Assert
+        for (int i = 0; i < 52; i++) {
+            Card card = deck.drawTopCard();
+            assertNotNull(card);
+            assertTrue(seen.add(card));
+        }
+
+        assertEquals(0, deck.remainingCards());
+        assertNull(deck.drawTopCard());
+    }
+
+    @Test
+    void checkReturnToBottomIncreasesCount() {
+        // Arrange
+        Deck deck = new Deck();
+        Card drawnCard = deck.drawTopCard();
+        assertNotNull(drawnCard);
+
+        // Act
+        deck.returnToBottom(drawnCard);
+
+        // Assert
+        assertEquals(52, deck.remainingCards());
+    }
+
+    @Test
+    void bugCaseNullCardShouldThrowError() {
+        // Arrange
+        Deck deck = new Deck();
+
+        // Assert
+        assertThrows(NullPointerException.class, () -> deck.returnToBottom(null));
+    }
+}
+
+
+============================================================
+test/GameTest.java
+============================================================
+
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class GameTest {
+
+    @Test
+    void checkIsValidName() throws Exception {
+        // Arrange
+        Game game = new Game(new Scanner(""));
+        Method method = Game.class.getDeclaredMethod("isValidName", String.class);
+        method.setAccessible(true);
+
+        // Act
+        boolean name1 = (boolean) method.invoke(game, "Alice");
+        boolean name2 = (boolean) method.invoke(game, "Computer");
+        boolean name3 = (boolean) method.invoke(game, "");
+        boolean name4 = (boolean) method.invoke(game, "Bob123");
+
+        // Assert
+        assertTrue(name1);
+        assertTrue(name2);
+        assertFalse(name3);
+        assertFalse(name4);
+    }
+
+    @Test
+    void checkLongestConsecutiveRankLength() throws Exception {
+        // Arrange
+        Game game = new Game(new Scanner(""));
+        Method method = Game.class.getDeclaredMethod("longestConsecutiveRankLength", List.class);
+        method.setAccessible(true);
+
+        List<Card> cards = new ArrayList<>();
+        cards.add(new Card(Card.Suit.CLUBS, Card.Rank.TWO));
+        cards.add(new Card(Card.Suit.DIAMONDS, Card.Rank.THREE));
+        cards.add(new Card(Card.Suit.HEARTS, Card.Rank.FOUR));
+        cards.add(new Card(Card.Suit.SPADES, Card.Rank.SEVEN));
+
+        // Act
+        int result = (int) method.invoke(game, cards);
+
+        // Assert
+        assertEquals(3, result);
+    }
+
+    @Test
+    void checkReadYesNoWithInvalidThenValidInput() throws Exception {
+        // Arrange
+        Game game = new Game(new Scanner("maybe\nyes\n"));
+        Method method = Game.class.getDeclaredMethod("readYesNo", String.class);
+        method.setAccessible(true);
+
+        // Act
+        boolean result = (boolean) method.invoke(game, "Enter yes/no: ");
+
+        // Assert
+        assertTrue(result);
+    }
+
+    @Test
+    void checkReadIntInRangeWithRetry() throws Exception {
+        // Arrange
+        Game game = new Game(new Scanner("abc\n11\n7\n"));
+        Method method = Game.class.getDeclaredMethod("readIntInRange", String.class, int.class, int.class);
+        method.setAccessible(true);
+
+        // Act
+        int value = (int) method.invoke(game, "Enter number: ", 5, 10);
+
+        // Assert
+        assertEquals(7, value);
+    }
+
+    @Test
+    void checkSequenceBonusSingleWinnerGetsFivePoints() throws Exception {
+        // Arrange
+        Game game = new Game(new Scanner(""));
+        Field playersField = Game.class.getDeclaredField("players");
+        playersField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<Player> players = (List<Player>) playersField.get(game);
+
+        Player p1 = new Player("Alice");
+        Player p2 = new Player("Bob");
+
+        p1.collectCard(new Card(Card.Suit.CLUBS, Card.Rank.TWO));
+        p1.collectCard(new Card(Card.Suit.DIAMONDS, Card.Rank.THREE));
+        p1.collectCard(new Card(Card.Suit.HEARTS, Card.Rank.FOUR));
+        p2.collectCard(new Card(Card.Suit.SPADES, Card.Rank.ACE));
+
+        players.add(p1);
+        players.add(p2);
+
+        // Act
+        Method method = Game.class.getDeclaredMethod("applyLongestConsecutiveSequenceBonus");
+        method.setAccessible(true);
+        method.invoke(game);
+
+        // Assert
+        assertEquals(5, p1.getSequenceBonus());
+        assertEquals(0, p2.getSequenceBonus());
+    }
+}
+
+
+============================================================
+test/PlayerTest.java
+============================================================
+
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class PlayerTest {
+
+    @Test
+    void checkComputerPlayerName() {
+        // Assert
+        assertTrue(new Player("Computer").isComputerControlled());
+        assertTrue(new Player("computer").isComputerControlled());
+        assertFalse(new Player("Alice").isComputerControlled());
+    }
+
+    @Test
+    void checkScoreCalculation() {
+        // Arrange
+        Player player = new Player("Alice");
+
+        // Act
+        player.addRoundPoints(3);
+        player.addSequenceBonus(5);
+        player.addSuitBonus(2);
+
+        // Assert
+        assertEquals(3, player.getRoundPoints());
+        assertEquals(5, player.getSequenceBonus());
+        assertEquals(2, player.getSuitBonus());
+        assertEquals(10, player.getScore());
+    }
+
+    @Test
+    void checkDiscardByOneBasedIndex() {
+        // Arrange
+        Player player = new Player("Alice");
+        Card first = new Card(Card.Suit.CLUBS, Card.Rank.TWO);
+        Card second = new Card(Card.Suit.DIAMONDS, Card.Rank.THREE);
+        Card third = new Card(Card.Suit.HEARTS, Card.Rank.FOUR);
+
+        player.collectCard(first);
+        player.collectCard(second);
+        player.collectCard(third);
+
+        // Act
+        List<Card> discarded = player.discardByOneBasedIndexes(new ArrayList<>(List.of(1, 3)));
+
+        // Assert
+        assertEquals(List.of(third, first), discarded);
+        assertEquals(List.of(second), player.getCollectedCards());
+    }
+
+    @Test
+    void bugCaseInvalidDiscardIndexesShouldBeIgnored() {
+        // Arrange
+        Player player = new Player("Alice");
+        Card first = new Card(Card.Suit.CLUBS, Card.Rank.TWO);
+        Card second = new Card(Card.Suit.DIAMONDS, Card.Rank.THREE);
+
+        player.collectCard(first);
+        player.collectCard(second);
+
+        // Act
+        List<Card> discarded = player.discardByOneBasedIndexes(new ArrayList<>(List.of(0, 99)));
+
+        // Assert
+        assertTrue(discarded.isEmpty());
+        assertEquals(2, player.getCollectedCards().size());
+    }
+}
+
+
